@@ -54,8 +54,8 @@ Material:
     - _ZWrite: 0
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _Normal: {r: 0.99894094, g: 0.04601165, b: 0, a: 0}
-    - _Point: {r: 0.5000093, g: 0.5000019, b: 0, a: 0}
+    - _Normal: {r: 0.0044127745, g: -0.9999903, b: 0, a: 0}
+    - _Point: {r: 0.5007785, g: 0.5006961, b: 0, a: 0}
     - _RendererColor: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
