@@ -4,31 +4,58 @@ using System.Linq;
 public class AutoShooter : MonoBehaviour
 {
     public GameObject bulletPrefab;
-    public float fireRate = 2f;
+    public float fireRate = 2f;     // базовая скорострельность (выстр./с)
     public float range = 8f;
-    public float bulletSpeed = 16f;
+    public float bulletSpeed = 16f; // базовая скорость
     public LayerMask enemyMask;
 
+    int targetsPerShot = 1;
+    float fireRateMul = 1f;
+    float bulletSpeedMul = 1f;
     float nextFire;
+
+    void OnEnable()
+    {
+        if (GameProgression.I)
+        {
+            ApplyStats();
+            GameProgression.I.OnStatsChanged += ApplyStats;
+        }
+    }
+    void OnDisable()
+    {
+        if (GameProgression.I)
+            GameProgression.I.OnStatsChanged -= ApplyStats;
+    }
+    void ApplyStats()
+    {
+        var gp = GameProgression.I;
+        targetsPerShot = gp ? gp.targetsPerShot : 1;
+        fireRateMul    = gp ? gp.fireRateMul    : 1f;
+        bulletSpeedMul = gp ? gp.bulletSpeedMul : 1f;
+    }
 
     void Update()
     {
         if (Time.time < nextFire) return;
 
-        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, range, enemyMask);
-        if (hits.Length == 0) return;
+        var hits = Physics2D.OverlapCircleAll(transform.position, range, enemyMask);
+        if (hits == null || hits.Length == 0) return;
 
-        // цель — ближайший
-        Transform t = hits
+        // ближайшие N целей
+        var targets = hits
             .OrderBy(h => (h.transform.position - transform.position).sqrMagnitude)
-            .First().transform;
+            .Take(Mathf.Max(1, targetsPerShot))
+            .Select(h => h.transform);
 
-        Vector2 dir = (t.position - transform.position).normalized;
+        foreach (var t in targets)
+        {
+            Vector2 dir = (t.position - transform.position).normalized;
+            var bullet = Instantiate(bulletPrefab, transform.position, Quaternion.identity);
+            var rb = bullet.GetComponent<Rigidbody2D>();
+            if (rb) rb.linearVelocity = dir * (bulletSpeed * bulletSpeedMul);
+        }
 
-        var bullet = Instantiate(bulletPrefab, transform.position, Quaternion.identity);
-        var rb = bullet.GetComponent<Rigidbody2D>();
-        rb.linearVelocity = dir * bulletSpeed;
-
-        nextFire = Time.time + 1f / fireRate;
+        nextFire = Time.time + 1f / (fireRate * fireRateMul);
     }
 }

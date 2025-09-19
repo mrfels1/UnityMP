@@ -33,9 +33,15 @@ public class XPGem : MonoBehaviour
         return best;
     }
 
+    public int xpValue = 1;
+
     void OnTriggerEnter2D(Collider2D other)
     {
         if (other.CompareTag("Player"))
-            Destroy(gameObject); // тут же инкрементируй опыт игрока, если нужно
+        {
+            if (GameProgression.I) GameProgression.I.AddXP(xpValue);
+            Destroy(gameObject);
+        }
     }
+
 }
