@@ -37,9 +37,6 @@ public class DiagonalSplitManager : MonoBehaviour
     Mode mode = Mode.Merged;
     bool transitioning;
 
-    int _savedMask;
-    CameraClearFlags _savedFlags;
-    Color _savedBg;
 
     RenderTexture rtA, rtB;
     int curW, curH;
@@ -56,6 +53,58 @@ public class DiagonalSplitManager : MonoBehaviour
     public float splitOrthoA = 8f;
     public float splitOrthoB = 8f;
     public bool usePerCamSplitSize = false;
+
+    [Header("Split transition")]
+    public float splitFade = 0.18f;   // длительность фейда
+    CanvasGroup _outGroup;
+
+    int _savedMask;
+    CameraClearFlags _savedFlags;
+    Color _savedBg;
+
+    void EnsureOutputGroup() {
+        if (!_outGroup) {
+            _outGroup = output.GetComponent<CanvasGroup>();
+            if (!_outGroup) _outGroup = output.gameObject.AddComponent<CanvasGroup>();
+        }
+    }
+
+    void ComputeSeam(out Vector2 mid, out Vector2 n) {
+        Vector2 va = groupCam.WorldToViewportPoint(playerA.position);
+        Vector2 vb = groupCam.WorldToViewportPoint(playerB.position);
+        mid = 0.5f * (va + vb);
+        n = (vb - va);
+        float L = n.magnitude;
+        n = (L < 1e-6f) ? Vector2.right : n / L;
+        combineMaterial.SetVector("_Point", new Vector4(mid.x, mid.y, 0, 0));
+        combineMaterial.SetVector("_Normal", new Vector4(n.x, n.y, 0, 0));
+    }
+
+    Vector3 CamPosForUV(Camera cam, Vector2 uv, Vector3 targetWorld) {
+        float s = cam.orthographicSize;
+        float a = Mathf.Max(0.0001f, cam.aspect);
+        float px = targetWorld.x - (uv.x - 0.5f) * 2f * s * a;
+        float py = targetWorld.y - (uv.y - 0.5f) * 2f * s;
+        return new Vector3(px, py, -10f);
+    }
+
+    void AlignSplitCamsInstant()
+    {
+        UpdateGroupCamToFitBoth();                 // актуализировать реф-камеру
+        ComputeSeam(out var mid, out var n);
+
+        // целевые UV-позиции игроков рядом со швом
+        var uva = mid + n * (-1f) * Mathf.Clamp(edgeBiasUV, 0.02f, 0.45f);
+        var uvb = mid + n * (+1f) * Mathf.Clamp(edgeBiasUV, 0.02f, 0.45f);
+
+        // зум
+        camA.orthographicSize = usePerCamSplitSize ? splitOrthoA : splitOrtho;
+        camB.orthographicSize = usePerCamSplitSize ? splitOrthoB : splitOrtho;
+
+        // позиция
+        camA.transform.position = CamPosForUV(camA, uva, playerA.position);
+        camB.transform.position = CamPosForUV(camB, uvb, playerB.position);
+    }
 
     void ToggleFollow(bool on){
         var a = camA.GetComponent<FollowCamera2D>();
@@ -161,50 +210,62 @@ public class DiagonalSplitManager : MonoBehaviour
     {
         transitioning = true; mode = Mode.Split;
 
-        // включаем камеры в RT
+        EnsureRT();
+        EnsureOutputGroup();
+
+        // камеры пишут в RT
         camA.enabled = true; 
         camB.enabled = true;
 
+        // стартовый зум
         camA.orthographicSize = usePerCamSplitSize ? splitOrthoA : splitOrtho;
         camB.orthographicSize = usePerCamSplitSize ? splitOrthoB : splitOrtho;
 
-
-        // НЕ выключаем groupCam: оставляем активной, но пустой
+        // groupCam активна, но пустая
         _savedMask = groupCam.cullingMask;
         _savedFlags = groupCam.clearFlags;
         _savedBg    = groupCam.backgroundColor;
-
         groupCam.enabled = true;
-        groupCam.cullingMask = 0;                         // ничего не рисует, но «камера есть»
+        groupCam.cullingMask = 0;
         groupCam.clearFlags  = CameraClearFlags.SolidColor;
         groupCam.backgroundColor = Color.black;
 
-        // включаем вывод композитинга
-        output.enabled = true;
-        ToggleFollow(false);  
-        yield return new WaitForSeconds(transitionTime);
+        // мгновенно поставить A/B у шва
+        AlignSplitCamsInstant();
+        ToggleFollow(false);
+
+        // 1 кадр на прогрев RT
+        yield return null;
+
+        // кросс-фейд включения композита
+        output.enabled = true; _outGroup.alpha = 0f;
+        float t = 0f;
+        while (t < splitFade) { t += Time.deltaTime; _outGroup.alpha = t / splitFade; yield return null; }
+
         transitioning = false;
     }
 
     IEnumerator ToMerged()
     {
         transitioning = true; mode = Mode.Merged;
+        EnsureOutputGroup();
 
-        // возвращаем полноценный рендер groupCam
+        // вернуть рендер groupCam
         groupCam.enabled = true;
         groupCam.cullingMask = _savedMask;
         groupCam.clearFlags  = _savedFlags;
         groupCam.backgroundColor = _savedBg;
-        
-        yield return new WaitForSeconds(transitionTime);
 
-        // отключаем сплит
+        // кросс-фейд выключения композита
+        float t = 0f;
+        while (t < splitFade) { t += Time.deltaTime; _outGroup.alpha = 1f - t / splitFade; UpdateGroupCamToFitBoth(); yield return null; }
+
         camA.enabled = false; 
         camB.enabled = false;
         output.enabled = false;
+        _outGroup.alpha = 0f;
 
         ToggleFollow(true);
-
         transitioning = false;
     }
 
