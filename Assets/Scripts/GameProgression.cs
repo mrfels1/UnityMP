@@ -22,6 +22,8 @@ public class GameProgression : MonoBehaviour
     public enum Rounding { Floor, Round, Ceil }
     public Rounding xpRounding = Rounding.Round;
 
+    public int totalXpEarned;
+
     public float xpToNextExact { get; private set; }      // храним как float
     public int   xpToNext
     {
@@ -55,6 +57,7 @@ public class GameProgression : MonoBehaviour
 
     public void AddXP(int amount)
     {
+        totalXpEarned += Mathf.Max(0, amount);
         xp += amount;
         // сравнение с ОКРУГЛЁННЫМ порогом уровня
         while (xp >= xpToNext)
